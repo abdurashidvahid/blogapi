@@ -95,7 +95,7 @@ def get_post( db:Session = Depends(get_session), user: User=Depends(current_user
     posts = db.query(Post).filter(Post.user_id == user.id).all()
     return posts
 
-@app.delete("/posts/{post_id}", response_model=PostOut)
+@app.delete("/posts/{post_id}")
 def delete_post(post_id:int , db:Session= Depends(get_session), user:User = Depends(current_user)):
     post = db.get(Post,post_id)
     if post is None:
@@ -104,7 +104,7 @@ def delete_post(post_id:int , db:Session= Depends(get_session), user:User = Depe
         raise HTTPException(status_code=403, detail="Not your post")
     db.delete(post)
     db.commit()
-    return "Post Deleted"
+    return {"message":"Post Deleted"}
 
 
 @app.patch("/posts/{post_id}", response_model=PostOut)
