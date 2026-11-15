@@ -1,0 +1,241 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blog</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+:root{--bg:#eef1f4;--card:#fff;--ink:#1b2733;--muted:#65727f;--line:#d8dee4;--accent:#0f6b6b;--accent-ink:#fff;--danger:#b3321f;
+--serif:"Newsreader",Georgia,serif;--sans:"Instrument Sans",system-ui,sans-serif}
+@media(prefers-color-scheme:dark){:root{--bg:#12181e;--card:#1a222a;--ink:#e6ebef;--muted:#92a0ad;--line:#2b3641;--accent:#4fb3b3;--accent-ink:#08201f;--danger:#ff8a78}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 var(--sans)}
+.wrap{max-width:640px;margin:0 auto;padding:32px 16px 64px}
+h1,h2{font-family:var(--serif);font-weight:600;margin:0}
+h1{font-size:2rem}
+input,textarea,button{font:inherit;color:inherit}
+input,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--card)}
+textarea{resize:vertical;min-height:96px;font-family:var(--serif);font-size:1.1rem;line-height:1.55}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button{cursor:pointer;border:1px solid var(--line);background:transparent;border-radius:6px;padding:8px 14px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button.danger{color:var(--danger)}
+button:disabled{opacity:.5;cursor:default}
+label{display:block;font-size:.9rem;color:var(--muted);margin:14px 0 4px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px}
+.tabs{display:flex;gap:4px;margin-bottom:8px}
+.tabs button{border:0;padding:6px 10px;color:var(--muted)}
+.tabs button[aria-selected=true]{color:var(--ink);font-weight:600;box-shadow:inset 0 -2px var(--accent);border-radius:0}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-bottom:24px}
+.top p{margin:2px 0 0;color:var(--muted);font-size:.9rem}
+.err{color:var(--danger);min-height:1.4em;margin:12px 0 0;font-size:.92rem}
+.row{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+.post{padding:20px 0;border-top:1px solid var(--line)}
+.post .body{font-family:var(--serif);font-size:1.15rem;line-height:1.6;white-space:pre-wrap;margin:0 0 10px}
+.post .acts{display:flex;gap:6px}
+.post .acts button{padding:4px 10px;font-size:.85rem}
+.empty{color:var(--muted);padding:24px 0}
+details{margin-top:28px;color:var(--muted);font-size:.9rem}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <section id="auth" class="hidden">
+    <h1>Blog</h1>
+    <p style="color:var(--muted);margin:4px 0 20px">Sign in to write and manage your posts.</p>
+    <div class="panel">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-login" aria-selected="true">Log in</button>
+        <button role="tab" id="tab-register" aria-selected="false">Create account</button>
+      </div>
+      <!-- Added novalidate to prevent browser popups on login -->
+      <form id="auth-form" novalidate>
+        <div id="name-wrap" class="hidden"><label for="username">Username</label><input id="username" autocomplete="username"></div>
+        <!-- Changed label to have an ID and input type to text -->
+        <label for="email" id="email-label">Username or Email</label><input id="email" type="text" autocomplete="email" required>
+        <label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required>
+        <p class="err" id="auth-err" role="alert"></p>
+        <div class="row"><button class="primary" id="auth-submit">Log in</button></div>
+      </form>
+    </div>
+  </section>
+
+  <section id="app" class="hidden">
+    <div class="top">
+      <div><h1 id="who">Your posts</h1><p id="mail"></p></div>
+      <button id="logout">Log out</button>
+    </div>
+    <div class="panel">
+      <form id="new-form">
+        <label for="new-content" style="margin-top:0">New post</label>
+        <textarea id="new-content" required></textarea>
+        <div class="row"><button class="primary" id="new-submit">Publish</button></div>
+      </form>
+    </div>
+    <p class="err" id="app-err" role="alert"></p>
+    <div id="posts"></div>
+  </section>
+
+  <details>
+    <summary>Server settings</summary>
+    <label for="api">API address</label>
+    <input id="api" placeholder="http://127.0.0.1:8000">
+  </details>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const store = {
+  get: k => { try { return localStorage.getItem(k) } catch { return null } },
+  set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v) } catch {} }
+};
+let token = store.get("token");
+let mode = "login";
+let posts = [];
+let editingId = null;
+
+$("api").value = store.get("api") || "http://127.0.0.1:8000";
+$("api").addEventListener("change", () => store.set("api", $("api").value.trim().replace(/\/$/, "")));
+
+async function api(path, { method = "GET", body, auth = true } = {}) {
+  const base = $("api").value.trim().replace(/\/$/, "");
+  const headers = {};
+  if (body) headers["Content-Type"] = "application/json";
+  if (auth && token) headers["Authorization"] = "Bearer " + token;
+  let res;
+  try {
+    res = await fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  } catch {
+    throw new Error("Can't reach the server at " + base + ". Check that it's running and that CORS is enabled.");
+  }
+  let data = null;
+  try { data = await res.json() } catch {}
+  if (res.status === 401 && auth) { logout(); throw new Error("Your session expired. Log in again.") }
+  if (!res.ok) {
+    let d = data && data.detail;
+    if (Array.isArray(d)) d = d.map(e => e.msg).join("; ");
+    throw new Error(d || "Request failed (" + res.status + ")");
+  }
+  return data;
+}
+
+function show(loggedIn) {
+  $("auth").classList.toggle("hidden", loggedIn);
+  $("app").classList.toggle("hidden", !loggedIn);
+}
+
+function setMode(m) {
+  mode = m;
+  const reg = m === "register";
+  $("tab-login").setAttribute("aria-selected", !reg);
+  $("tab-register").setAttribute("aria-selected", reg);
+  $("name-wrap").classList.toggle("hidden", !reg);
+  $("username").required = reg;
+  $("password").autocomplete = reg ? "new-password" : "current-password";
+  $("auth-submit").textContent = reg ? "Create account" : "Log in";
+  
+  // Dynamic label and validation type based on mode
+  $("email-label").textContent = reg ? "Email" : "Username or Email";
+  $("email").type = reg ? "email" : "text";
+
+  $("auth-err").textContent = "";
+}
+$("tab-login").onclick = () => setMode("login");
+$("tab-register").onclick = () => setMode("register");
+
+$("auth-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const btn = $("auth-submit"); btn.disabled = true; $("auth-err").textContent = "";
+  const email = $("email").value.trim().toLowerCase();
+  const password = $("password").value;
+  try {
+    if (mode === "register") {
+      await api("/register", { method: "POST", auth: false, body: { username: $("username").value.trim(), email, password } });
+    }
+    // Sends the input as 'email' key (your backend will need to accept username or email here)
+    const t = await api("/login", { method: "POST", auth: false, body: { email, password } });
+    token = t.access_token; store.set("token", token);
+    $("password").value = "";
+    await enter();
+  } catch (err) { $("auth-err").textContent = err.message }
+  btn.disabled = false;
+});
+
+async function enter() {
+  try {
+    const me = await api("/me");
+    $("who").textContent = me.username;
+    $("mail").textContent = me.email;
+    show(true);
+    await loadPosts();
+  } catch (err) {
+    if (token) { show(true); $("app-err").textContent = err.message } else { show(false); $("auth-err").textContent = err.message }
+  }
+}
+
+function logout() {
+  token = null; store.set("token", null); posts = []; editingId = null;
+  show(false); setMode("login");
+}
+$("logout").onclick = logout;
+
+async function loadPosts() {
+  $("app-err").textContent = "";
+  try { posts = (await api("/me/posts")).slice().reverse(); render() }
+  catch (err) { $("app-err").textContent = err.message }
+}
+
+function render() {
+  const box = $("posts"); box.innerHTML = "";
+  if (!posts.length) { box.innerHTML = '<p class="empty">No posts yet. Write your first one above.</p>'; return }
+  for (const p of posts) {
+    const el = document.createElement("article"); el.className = "post";
+    if (p.id === editingId) {
+      const ta = document.createElement("textarea"); ta.value = p.content;
+      const row = document.createElement("div"); row.className = "row";
+      const cancel = btn("Cancel", "", () => { editingId = null; render() });
+      const save = btn("Save changes", "primary", async () => {
+        save.disabled = true;
+        try { const u = await api("/posts/" + p.id, { method: "PATCH", body: { content: ta.value } }); p.content = u.content; editingId = null; render() }
+        catch (err) { $("app-err").textContent = err.message; save.disabled = false }
+      });
+      row.append(cancel, save); el.append(ta, row);
+    } else {
+      const body = document.createElement("p"); body.className = "body"; body.textContent = p.content;
+      const acts = document.createElement("div"); acts.className = "acts";
+      acts.append(
+        btn("Edit", "", () => { editingId = p.id; render() }),
+        btn("Delete", "danger", async () => {
+          if (!confirm("Delete this post?")) return;
+          try { await api("/posts/" + p.id, { method: "DELETE" }); posts = posts.filter(x => x.id !== p.id); render() }
+          catch (err) { $("app-err").textContent = err.message }
+        })
+      );
+      el.append(body, acts);
+    }
+    box.append(el);
+  }
+}
+function btn(text, cls, fn) { const b = document.createElement("button"); b.type = "button"; b.textContent = text; b.className = cls; b.onclick = fn; return b }
+
+$("new-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const b = $("new-submit"); b.disabled = true; $("app-err").textContent = "";
+  try {
+    const p = await api("/posts", { method: "POST", body: { content: $("new-content").value } });
+    posts.unshift(p); $("new-content").value = ""; render();
+  } catch (err) { $("app-err").textContent = err.message }
+  b.disabled = false;
+});
+
+token ? enter() : show(false);
+if (!token) setMode("login");
+</script>
+</body>
+</html>
+
+

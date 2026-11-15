@@ -7,12 +7,21 @@ from sqlalchemy.exc import IntegrityError #for email repeating error!
 from mtoken import create_token,read_token
 from jose import jwt
 import os
+from fastapi.middleware.cors import CORSMiddleware
+
 
 sec_key=os.getenv("SEC_KEY")
 alg ="HS256"
 app = FastAPI()
 ph = PasswordHash.recommended()
 bearer = HTTPBearer()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # For local development only; replace with the specific frontend address in production
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class UserIn(BaseModel):
